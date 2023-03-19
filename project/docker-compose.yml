@@ -1,0 +1,61 @@
+version: '3.2'
+
+services:
+  api:
+    ports:
+      - 8000:80
+    environment:
+      - BASE_URL=http://api.docker.localhost 
+    build:
+      context: .
+      dockerfile: Dockerfile
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.limit.buffering.maxRequestBodyBytes=2000000"
+      - "traefik.http.routers.apiroute.rule=Host(`api.docker.localhost`)"
+      - "traefik.http.routers.apiroute.tls=true"
+      - "traefik.http.routers.apiroute.entrypoints=websecure"
+    
+    command: python manage.py runserver 0.0.0.0:80
+
+  reverse-proxy:
+    # The official v2 Traefik docker image
+    image: traefik:v2.8
+    restart: always
+    # Enables the web UI and tells Traefik to listen to docker
+    command: 
+      - "--providers.docker"
+      - "--providers.docker.exposedbydefault=false"
+      - "--api.insecure=false"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.internalhttps.address=:8443"
+      - "--entryPoints.internalhttp.address=:8080"
+      - "--api.dashboard=true"
+      - "--metrics.prometheus=true"
+      - "--entryPoints.metrics.address=:8082"
+      - "--metrics.prometheus.entryPoint=metrics"      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.docker.localhost`)"
+      - "traefik.http.routers.traefik.entrypoints=internalhttp"    
+    ports:
+      - 443:443
+      - 8443:8443
+      - 8080:8080
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+  
+  redis:
+    image: "redis:alpine"
+
+    command: redis-server
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - $PWD/redis-data:/var/lib/redis
+      - $PWD/redis.conf:/usr/local/etc/redis/redis.conf
